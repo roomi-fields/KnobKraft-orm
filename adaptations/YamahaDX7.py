@@ -3,6 +3,7 @@
 #
 #   Dual licensed: Distributed under Affero GPL license by default, an MIT license is available for purchase
 #
+import hashlib
 from ctypes import *
 from typing import List
 
@@ -140,6 +141,22 @@ def nameFromDump(message):
     raise Exception("Can only extract a name from a single program dump")
 
 
+def renamePatch(message, new_name):
+    if isEditBufferDump(message) and len(message) == 163:
+        name = [ord(c) if 32 <= ord(c) < 127 else 0x20 for c in new_name[:10].ljust(10)]
+        data_block = message[6:-12] + name
+        return message[:6] + data_block + [checksum(data_block), 0xf7]
+    raise Exception("Can only rename a single voice dump")
+
+
+def calculateFingerprint(message):
+    # The voice data without its name (the last 10 of its 155 bytes): a renamed copy is the same sound
+    if isEditBufferDump(message) and len(message) == 163:
+        data_block = message[6:-12]
+        return hashlib.md5(bytearray(data_block)).hexdigest()
+    raise Exception("Can only fingerprint a single voice dump")
+
+
 def setupHelp():
     return "The Yamaha DX7 is an early synth, it's MIDI implementation is really simple.\n" \
         "Sorry to say that you cannot request the edit buffer or a bank dump from the computer, you need" \
@@ -258,7 +275,14 @@ def make_test_data():
         assert isBankDumpFinished(test_data.all_messages)
         patches = knobkraft.sysex.splitSysex(extractPatchesFromBank(flat_list_of_messages))
         assert len(patches) == 32
-        yield testing.ProgramTestData(patches[0], name="SYN-LEAD 2")
+        voice = patches[0]
+        renamed = renamePatch(voice, "Other")
+        assert nameFromDump(renamed) == "Other     " and renamed[-2] == checksum(renamed[6:-2])
+        assert calculateFingerprint(renamed) == calculateFingerprint(voice), "a renamed copy is the same sound"
+        changed = voice.copy()
+        changed[20] ^= 0x01
+        assert calculateFingerprint(changed) != calculateFingerprint(voice)
+        yield testing.ProgramTestData(voice, name="SYN-LEAD 2", rename_name="Renamed")
 
     def banks(test_data: testing.TestData):
         assert isBankDumpFinished(test_data.all_messages)
