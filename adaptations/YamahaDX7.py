@@ -89,7 +89,7 @@ def createEditBufferRequest(channel):
 
 def isEditBufferDump(message):
     # It's not really edit buffer dumps, but single voice dumps
-    return len(message) > 5 and message[:6] == [0xf0, 0x43, 0x00, 0x00, 0x01, 0x1b]
+    return len(message) == 163 and message[:6] == [0xf0, 0x43, 0x00, 0x00, 0x01, 0x1b]
 
 
 def convertToEditBuffer(channel, message):
@@ -142,7 +142,7 @@ def nameFromDump(message):
 
 
 def renamePatch(message, new_name):
-    if isEditBufferDump(message) and len(message) == 163:
+    if isEditBufferDump(message):
         name = [ord(c) if 32 <= ord(c) < 127 else 0x20 for c in new_name[:10].ljust(10)]
         data_block = message[6:-12] + name
         return message[:6] + data_block + [checksum(data_block), 0xf7]
@@ -151,7 +151,7 @@ def renamePatch(message, new_name):
 
 def calculateFingerprint(message):
     # The voice data without its name (the last 10 of its 155 bytes): a renamed copy is the same sound
-    if isEditBufferDump(message) and len(message) == 163:
+    if isEditBufferDump(message):
         data_block = message[6:-12]
         return hashlib.md5(bytearray(data_block)).hexdigest()
     raise Exception("Can only fingerprint a single voice dump")
@@ -282,6 +282,7 @@ def make_test_data():
         changed = voice.copy()
         changed[20] ^= 0x01
         assert calculateFingerprint(changed) != calculateFingerprint(voice)
+        assert not isEditBufferDump(voice[:100] + [0xf7]), "a truncated voice is not a voice"
         yield testing.ProgramTestData(voice, name="SYN-LEAD 2", rename_name="Renamed")
 
     def banks(test_data: testing.TestData):
